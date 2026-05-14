@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 
 type Variable = "c1" | "v1" | "c2" | "v2";
 type ConcUnit = "M" | "mM";
-type VolUnit = "L" | "µL" | "mL";
+type VolUnit = "L" | "mL" | "µL";
 type InputUnit = ConcUnit | VolUnit;
 
 const VAR_META: Record<Variable, { label: string; sub: string; isConc: boolean }> = {
@@ -140,7 +140,7 @@ export default function Home() {
             const isUnk = v === unknown;
             const curUnit = inputUnits[v];
             const concUnits: ConcUnit[] = ["mM", "M"];
-            const volUnits: VolUnit[] = ["mL", "L", "µL"];
+            const volUnits: VolUnit[] = ["µL", "mL", "L"];
             const unitOptions = isConc ? concUnits : volUnits;
 
             return (
@@ -199,7 +199,7 @@ export default function Home() {
                         resultConcUnit === u ? "bg-[#fe019a] text-[#0d0f14]" : "text-[#9aa0ae] hover:text-[#f0eee8]"
                       }`}>{u}</button>
                   ))
-                : (["mL", "L", "µL"] as const).map(u => (
+                : (["µL", "mL", "L"] as const).map(u => (
                     <button key={u} onClick={() => setResultVolUnit(u)}
                       className={`text-base px-4 py-1 rounded-lg transition-all font-bold ${
                         resultVolUnit === u ? "bg-[#fe019a] text-[#0d0f14]" : "text-[#9aa0ae] hover:text-[#f0eee8]"
