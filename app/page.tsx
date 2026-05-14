@@ -7,6 +7,16 @@ type ConcUnit = "M" | "mM";
 type VolUnit = "L" | "mL" | "µL";
 type InputUnit = ConcUnit | VolUnit;
 
+interface HistoryEntry {
+  id: number;
+  inputs: Record<Variable, string>;
+  inputUnits: Record<Variable, InputUnit>;
+  unknown: Variable;
+  result: number;
+  resultUnit: ConcUnit | VolUnit;
+  timestamp: Date;
+}
+
 const VAR_META: Record<Variable, { label: string; sub: string; isConc: boolean }> = {
   c1: { label: "C", sub: "1", isConc: true },
   v1: { label: "V", sub: "1", isConc: false },
@@ -17,6 +27,12 @@ const VAR_META: Record<Variable, { label: string; sub: string; isConc: boolean }
 function toSI(val: number, unit: InputUnit): number {
   if (unit === "mM" || unit === "mL") return val / 1000;
   if (unit === "µL") return val / 1_000_000;
+  return val;
+}
+
+function fromSI(val: number, unit: ConcUnit | VolUnit): number {
+  if (unit === "mM" || unit === "mL") return val * 1000;
+  if (unit === "µL") return val * 1_000_000;
   return val;
 }
 
@@ -36,6 +52,11 @@ function fmt(val: number): string {
   return parseFloat(val.toFixed(6)).toString();
 }
 
+function calcKey(inputs: Record<Variable, string>, inputUnits: Record<Variable, InputUnit>, unknown: Variable, result: number, resultUnit: ConcUnit | VolUnit): string {
+  const known = VARS.filter(v => v !== unknown).map(v => `${v}:${inputs[v]}${inputUnits[v]}`).join(",");
+  return `${unknown}|${known}|${fmt(result)}${resultUnit}`;
+}
+
 const VARS: Variable[] = ["c1", "v1", "c2", "v2"];
 const DEFAULT_INPUT_UNITS: Record<Variable, InputUnit> = { c1: "mM", v1: "mL", c2: "mM", v2: "mL" };
 
@@ -47,6 +68,8 @@ export default function Home() {
   const [resultVolUnit, setResultVolUnit] = useState<VolUnit>("mL");
   const [result, setResult] = useState<number | null>(null);
   const [error, setError] = useState("");
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [nextId, setNextId] = useState(1);
 
   const unknownIsConc = VAR_META[unknown].isConc;
 
@@ -85,6 +108,51 @@ export default function Home() {
     else { setError(""); setResult(res); }
   }, [inputs, unknown, inputUnits]);
 
+  const currentResultUnit = unknownIsConc ? resultConcUnit : resultVolUnit;
+
+  const isDuplicate = result !== null && history.some(e =>
+    calcKey(e.inputs, e.inputUnits, e.unknown, e.result, e.resultUnit) ===
+    calcKey(inputs, inputUnits, unknown, result, currentResultUnit)
+  );
+
+  const saveToHistory = () => {
+    if (result === null || isDuplicate) return;
+    const entry: HistoryEntry = {
+      id: nextId,
+      inputs: { ...inputs },
+      inputUnits: { ...inputUnits },
+      unknown,
+      result,
+      resultUnit: currentResultUnit,
+      timestamp: new Date(),
+    };
+    setHistory(p => [entry, ...p].slice(0, 20));
+    setNextId(n => n + 1);
+  };
+
+  const loadFromHistory = (entry: HistoryEntry) => {
+    setUnknown(entry.unknown);
+    setInputs({ ...entry.inputs });
+    setInputUnits({ ...entry.inputUnits });
+    if (VAR_META[entry.unknown].isConc) setResultConcUnit(entry.resultUnit as ConcUnit);
+    else setResultVolUnit(entry.resultUnit as VolUnit);
+  };
+
+  const deleteFromHistory = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setHistory(p => p.filter(entry => entry.id !== id));
+  };
+
+  const formatHistoryEntry = (entry: HistoryEntry) => {
+    const knownParts = VARS.filter(v => v !== entry.unknown).map(v => {
+      const { label, sub } = VAR_META[v];
+      return `${label}${sub} = ${entry.inputs[v]} ${entry.inputUnits[v]}`;
+    });
+    const { label, sub } = VAR_META[entry.unknown];
+    const displayVal = fmt(fromSI(entry.result, entry.resultUnit));
+    return { knownParts, resultStr: `${label}${sub} = ${displayVal} ${entry.resultUnit}` };
+  };
+
   const displayResult = () => {
     if (result === null) return { val: "—", unit: "", alt: "" };
     if (unknownIsConc) {
@@ -101,8 +169,8 @@ export default function Home() {
   const { val, unit, alt } = displayResult();
 
   return (
-    <main style={{ zoom: 0.92 }} className="min-h-screen bg-[#000000] text-[#f0eee8] flex flex-col items-center justify-center py-8 px-10 font-mono">
-      <div className="mb-14 text-center select-none">
+    <main style={{ zoom: 0.92 }} className="min-h-screen bg-[#000000] text-[#f0eee8] flex flex-col items-center py-8 px-10 font-mono">
+      <div className="mb-14 text-center select-none mt-8">
         <h1 className="text-7xl font-bold tracking-widest text-[#fe019a] mb-3">
           C<sub className="text-4xl">1</sub>V<sub className="text-4xl">1</sub>
           <span className="text-[#666c7a] mx-5">=</span>
@@ -165,7 +233,6 @@ export default function Home() {
                   }`}
                 />
 
-                {/* Inline unit button group */}
                 <div className={`shrink-0 mr-3 flex gap-1 ${isUnk ? "invisible" : ""}`}>
                   {(unitOptions as InputUnit[]).map(u => (
                     <button
@@ -218,10 +285,74 @@ export default function Home() {
             }
           </div>
           {result !== null && !error && (
-            <p className="px-6 pb-5 text-base text-[#6b7280]">{alt}</p>
+            <p className="px-6 pb-3 text-base text-[#6b7280]">{alt}</p>
+          )}
+          {result !== null && !error && (
+            <div className="px-6 pb-5 flex items-center gap-3">
+              <button
+                onClick={saveToHistory}
+                disabled={isDuplicate}
+                className={`text-sm px-4 py-2 rounded-lg border-2 transition-all ${
+                  isDuplicate
+                    ? "border-[#2a2e3a] text-[#3a3f4d] cursor-not-allowed"
+                    : "border-[#3a3f4d] text-[#9aa0ae] hover:border-[#fe019a]/40 hover:text-[#fe019a]"
+                }`}
+              >
+                + SAVE TO HISTORY
+              </button>
+            </div>
           )}
         </div>
+
+        {/* History */}
+        {history.length > 0 && (
+          <div className="space-y-3 pt-4 border-t-2 border-[#1e2130]">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-[#8891a4] tracking-widest uppercase">RECENT CALCULATIONS</p>
+              <button
+                onClick={() => setHistory([])}
+                className="text-xs text-[#4a5060] hover:text-[#ff6b6b] transition-colors"
+              >
+                CLEAR ALL
+              </button>
+            </div>
+            <div className="space-y-2">
+              {history.map(entry => {
+                const { knownParts, resultStr } = formatHistoryEntry(entry);
+                return (
+                  <div
+                    key={entry.id}
+                    className="relative group"
+                  >
+                    <button
+                      onClick={() => loadFromHistory(entry)}
+                      className="w-full text-left rounded-lg border-2 border-[#2a2e3a] bg-[#0d0f14] px-5 py-4 hover:border-[#fe019a]/30 hover:bg-[#fe019a]/5 transition-all"
+                    >
+                      <div className="flex items-start justify-between gap-4 pr-8">
+                        <div className="space-y-1 min-w-0">
+                          <p className="text-base text-[#fe019a] font-bold truncate">{resultStr}</p>
+                          <p className="text-xs text-[#555b6e] truncate">{knownParts.join("  ·  ")}</p>
+                        </div>
+                        <span className="text-xs text-[#3a3f4d] group-hover:text-[#9aa0ae] shrink-0 transition-colors pt-0.5">
+                          {entry.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+                    </button>
+                    <button
+                      onClick={(e) => deleteFromHistory(entry.id, e)}
+                      className="absolute top-3 right-3 w-6 h-6 flex items-center justify-center rounded text-[#3a3f4d] hover:text-[#ff6b6b] hover:bg-[#ff6b6b]/10 transition-all opacity-0 group-hover:opacity-100"
+                      title="Delete"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
+      <div className="h-8" />
     </main>
   );
 }
