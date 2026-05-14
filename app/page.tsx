@@ -40,7 +40,7 @@ const VARS: Variable[] = ["c1", "v1", "c2", "v2"];
 const DEFAULT_INPUT_UNITS: Record<Variable, InputUnit> = { c1: "mM", v1: "mL", c2: "mM", v2: "mL" };
 
 export default function Home() {
-  const [unknown, setUnknown] = useState<Variable>("c2");
+  const [unknown, setUnknown] = useState<Variable>("c1");
   const [inputs, setInputs] = useState<Record<Variable, string>>({ c1: "", v1: "", c2: "", v2: "" });
   const [inputUnits, setInputUnits] = useState<Record<Variable, InputUnit>>(DEFAULT_INPUT_UNITS);
   const [resultConcUnit, setResultConcUnit] = useState<ConcUnit>("mM");
