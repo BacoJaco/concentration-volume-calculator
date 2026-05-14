@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 
 type Variable = "c1" | "v1" | "c2" | "v2";
 type ConcUnit = "M" | "mM";
-type VolUnit = "L" | "mL" | "µL";
+type VolUnit = "L" | "µL" | "mL";
 type InputUnit = ConcUnit | VolUnit;
 
 const VAR_META: Record<Variable, { label: string; sub: string; isConc: boolean }> = {
