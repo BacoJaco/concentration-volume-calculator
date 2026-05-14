@@ -15,6 +15,7 @@ interface HistoryEntry {
   result: number;
   resultUnit: ConcUnit | VolUnit;
   timestamp: Date;
+  note: string;
 }
 
 const VAR_META: Record<Variable, { label: string; sub: string; isConc: boolean }> = {
@@ -70,6 +71,9 @@ export default function Home() {
   const [error, setError] = useState("");
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [nextId, setNextId] = useState(1);
+  const [pendingNote, setPendingNote] = useState("");
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [editingNoteText, setEditingNoteText] = useState("");
 
   const unknownIsConc = VAR_META[unknown].isConc;
 
@@ -125,9 +129,11 @@ export default function Home() {
       result,
       resultUnit: currentResultUnit,
       timestamp: new Date(),
+      note: pendingNote.trim(),
     };
     setHistory(p => [entry, ...p].slice(0, 20));
     setNextId(n => n + 1);
+    setPendingNote("");
   };
 
   const loadFromHistory = (entry: HistoryEntry) => {
@@ -141,6 +147,18 @@ export default function Home() {
   const deleteFromHistory = (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
     setHistory(p => p.filter(entry => entry.id !== id));
+    if (editingNoteId === id) setEditingNoteId(null);
+  };
+
+  const startEditNote = (id: number, note: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingNoteId(id);
+    setEditingNoteText(note);
+  };
+
+  const saveNote = (id: number) => {
+    setHistory(p => p.map(e => e.id === id ? { ...e, note: editingNoteText.trim() } : e));
+    setEditingNoteId(null);
   };
 
   const formatHistoryEntry = (entry: HistoryEntry) => {
@@ -220,7 +238,6 @@ export default function Home() {
                 }`}>
                   {label}<sub className="text-sm">{sub}</sub>
                 </span>
-
                 <input
                   type="text"
                   inputMode="decimal"
@@ -232,7 +249,6 @@ export default function Home() {
                     isUnk ? "cursor-not-allowed text-[#fe019a]/30" : "text-[#f0eee8]"
                   }`}
                 />
-
                 <div className={`shrink-0 mr-3 flex gap-1 ${isUnk ? "invisible" : ""}`}>
                   {(unitOptions as InputUnit[]).map(u => (
                     <button
@@ -288,18 +304,28 @@ export default function Home() {
             <p className="px-6 pb-3 text-base text-[#6b7280]">{alt}</p>
           )}
           {result !== null && !error && (
-            <div className="px-6 pb-5 flex items-center gap-3">
-              <button
-                onClick={saveToHistory}
-                disabled={isDuplicate}
-                className={`text-sm px-4 py-2 rounded-lg border-2 transition-all ${
-                  isDuplicate
-                    ? "border-[#2a2e3a] text-[#3a3f4d] cursor-not-allowed"
-                    : "border-[#3a3f4d] text-[#9aa0ae] hover:border-[#fe019a]/40 hover:text-[#fe019a]"
-                }`}
-              >
-                + SAVE TO HISTORY
-              </button>
+            <div className="px-6 pb-5 space-y-3">
+              <input
+                type="text"
+                value={pendingNote}
+                onChange={e => setPendingNote(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") saveToHistory(); }}
+                placeholder="Add a note (optional)..."
+                className="w-full bg-transparent border-2 border-[#2a2e3a] rounded-lg px-4 py-2 text-sm text-[#f0eee8] placeholder:text-[#3a3f4d] outline-none focus:border-[#fe019a]/30 transition-colors"
+              />
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={saveToHistory}
+                  disabled={isDuplicate}
+                  className={`text-sm px-4 py-2 rounded-lg border-2 transition-all ${
+                    isDuplicate
+                      ? "border-[#2a2e3a] text-[#3a3f4d] cursor-not-allowed"
+                      : "border-[#3a3f4d] text-[#9aa0ae] hover:border-[#fe019a]/40 hover:text-[#fe019a]"
+                  }`}
+                >
+                  + SAVE TO HISTORY
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -309,38 +335,62 @@ export default function Home() {
           <div className="space-y-3 pt-4 border-t-2 border-[#1e2130]">
             <div className="flex items-center justify-between">
               <p className="text-sm text-[#8891a4] tracking-widest uppercase">RECENT CALCULATIONS</p>
-              <button
-                onClick={() => setHistory([])}
-                className="text-xs text-[#4a5060] hover:text-[#ff6b6b] transition-colors"
-              >
+              <button onClick={() => setHistory([])} className="text-xs text-[#4a5060] hover:text-[#ff6b6b] transition-colors">
                 CLEAR ALL
               </button>
             </div>
             <div className="space-y-2">
               {history.map(entry => {
                 const { knownParts, resultStr } = formatHistoryEntry(entry);
+                const isEditingNote = editingNoteId === entry.id;
                 return (
-                  <div
-                    key={entry.id}
-                    className="relative group"
-                  >
+                  <div key={entry.id} className="relative">
                     <button
                       onClick={() => loadFromHistory(entry)}
-                      className="w-full text-left rounded-lg border-2 border-[#2a2e3a] bg-[#0d0f14] px-5 py-4 hover:border-[#fe019a]/30 hover:bg-[#fe019a]/5 transition-all"
+                      className="w-full text-left rounded-lg border-2 border-[#2a2e3a] bg-[#0d0f14] px-6 py-5 hover:border-[#fe019a]/30 hover:bg-[#fe019a]/5 transition-all"
                     >
-                      <div className="flex items-start justify-between gap-4 pr-8">
-                        <div className="space-y-1 min-w-0">
-                          <p className="text-base text-[#fe019a] font-bold truncate">{resultStr}</p>
-                          <p className="text-xs text-[#555b6e] truncate">{knownParts.join("  ·  ")}</p>
+                      <div className="flex items-start justify-between gap-4 pr-10">
+                        <div className="space-y-2 min-w-0 w-full">
+                          <p className="text-2xl text-[#fe019a] font-bold truncate">{resultStr}</p>
+                          <p className="text-sm text-[#555b6e] truncate">{knownParts.join("  ·  ")}</p>
+                          {/* Note: click to edit */}
+                          {!isEditingNote && (
+                            <p
+                              onClick={e => startEditNote(entry.id, entry.note, e)}
+                              className={`text-sm mt-1 cursor-text transition-colors ${
+                                entry.note
+                                  ? "text-[#8891a4] hover:text-[#f0eee8]"
+                                  : "text-[#3a3f4d] hover:text-[#555b6e]"
+                              }`}
+                            >
+                              {entry.note || "Click to add a note..."}
+                            </p>
+                          )}
+                          {isEditingNote && (
+                            <div className="mt-1 flex gap-2" onClick={e => e.stopPropagation()}>
+                              <input
+                                autoFocus
+                                type="text"
+                                value={editingNoteText}
+                                onChange={e => setEditingNoteText(e.target.value)}
+                                onKeyDown={e => { if (e.key === "Enter") saveNote(entry.id); if (e.key === "Escape") setEditingNoteId(null); }}
+                                className="flex-1 bg-transparent border-b border-[#fe019a]/30 text-sm text-[#f0eee8] outline-none placeholder:text-[#3a3f4d] pb-0.5"
+                                placeholder="Add a note..."
+                              />
+                              <button onClick={() => saveNote(entry.id)} className="text-sm text-[#fe019a] hover:text-[#f0eee8] transition-colors">Save</button>
+                              <button onClick={() => setEditingNoteId(null)} className="text-sm text-[#4a5060] hover:text-[#9aa0ae] transition-colors">Cancel</button>
+                            </div>
+                          )}
                         </div>
-                        <span className="text-xs text-[#3a3f4d] group-hover:text-[#9aa0ae] shrink-0 transition-colors pt-0.5">
+                        <span className="text-sm text-[#3a3f4d] shrink-0 transition-colors pt-0.5">
                           {entry.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                         </span>
                       </div>
                     </button>
+                    {/* Delete button — always visible */}
                     <button
-                      onClick={(e) => deleteFromHistory(entry.id, e)}
-                      className="absolute top-3 right-3 w-6 h-6 flex items-center justify-center rounded text-[#3a3f4d] hover:text-[#ff6b6b] hover:bg-[#ff6b6b]/10 transition-all opacity-0 group-hover:opacity-100"
+                      onClick={e => deleteFromHistory(entry.id, e)}
+                      className="absolute top-4 right-4 w-7 h-7 flex items-center justify-center rounded text-[#555b6e] hover:text-[#ff6b6b] hover:bg-[#ff6b6b]/10 transition-all text-base"
                       title="Delete"
                     >
                       ✕
