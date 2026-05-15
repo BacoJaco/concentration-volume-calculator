@@ -74,6 +74,7 @@ export default function Home() {
   const [pendingNote, setPendingNote] = useState("");
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const [editingNoteText, setEditingNoteText] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const unknownIsConc = VAR_META[unknown].isConc;
 
@@ -144,10 +145,21 @@ export default function Home() {
     else setResultVolUnit(entry.resultUnit as VolUnit);
   };
 
-  const deleteFromHistory = (id: number, e: React.MouseEvent) => {
+  const confirmDelete = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setConfirmDeleteId(id);
+  };
+
+  const doDelete = (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
     setHistory(p => p.filter(entry => entry.id !== id));
     if (editingNoteId === id) setEditingNoteId(null);
+    setConfirmDeleteId(null);
+  };
+
+  const cancelDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setConfirmDeleteId(null);
   };
 
   const startEditNote = (id: number, note: string, e: React.MouseEvent) => {
@@ -323,8 +335,9 @@ export default function Home() {
                       : "border-[#3a3f4d] text-[#9aa0ae] hover:border-[#fe019a]/40 hover:text-[#fe019a]"
                   }`}
                 >
-                  + SAVE TO HISTORY
+                  + Save to history
                 </button>
+                {isDuplicate && <span className="text-xs text-[#4a5060]">Already saved</span>}
               </div>
             </div>
           )}
@@ -334,9 +347,9 @@ export default function Home() {
         {history.length > 0 && (
           <div className="space-y-3 pt-4 border-t-2 border-[#1e2130]">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-[#8891a4] tracking-widest uppercase">RECENT CALCULATIONS</p>
+              <p className="text-sm text-[#8891a4] tracking-widest uppercase">Recent Calculations</p>
               <button onClick={() => setHistory([])} className="text-xs text-[#4a5060] hover:text-[#ff6b6b] transition-colors">
-                CLEAR ALL
+                Clear all
               </button>
             </div>
             <div className="space-y-2">
@@ -345,56 +358,77 @@ export default function Home() {
                 const isEditingNote = editingNoteId === entry.id;
                 return (
                   <div key={entry.id} className="relative">
-                    <button
-                      onClick={() => loadFromHistory(entry)}
-                      className="w-full text-left rounded-lg border-2 border-[#2a2e3a] bg-[#0d0f14] px-6 py-5 hover:border-[#fe019a]/30 hover:bg-[#fe019a]/5 transition-all"
-                    >
-                      <div className="flex items-start justify-between gap-4 pr-10">
-                        <div className="space-y-2 min-w-0 w-full">
-                          <p className="text-2xl text-[#fe019a] font-bold truncate">{resultStr}</p>
-                          <p className="text-sm text-[#555b6e] truncate">{knownParts.join("  ·  ")}</p>
-                          {/* Note: click to edit */}
-                          {!isEditingNote && (
-                            <p
-                              onClick={e => startEditNote(entry.id, entry.note, e)}
-                              className={`text-sm mt-1 cursor-text transition-colors ${
-                                entry.note
-                                  ? "text-[#8891a4] hover:text-[#f0eee8]"
-                                  : "text-[#3a3f4d] hover:text-[#555b6e]"
-                              }`}
-                            >
-                              {entry.note || "Click to add a note..."}
-                            </p>
-                          )}
-                          {isEditingNote && (
-                            <div className="mt-1 flex gap-2" onClick={e => e.stopPropagation()}>
-                              <input
-                                autoFocus
-                                type="text"
-                                value={editingNoteText}
-                                onChange={e => setEditingNoteText(e.target.value)}
-                                onKeyDown={e => { if (e.key === "Enter") saveNote(entry.id); if (e.key === "Escape") setEditingNoteId(null); }}
-                                className="flex-1 bg-transparent border-b border-[#fe019a]/30 text-sm text-[#f0eee8] outline-none placeholder:text-[#3a3f4d] pb-0.5"
-                                placeholder="Add a note..."
-                              />
-                              <button onClick={() => saveNote(entry.id)} className="text-sm text-[#fe019a] hover:text-[#f0eee8] transition-colors">Save</button>
-                              <button onClick={() => setEditingNoteId(null)} className="text-sm text-[#4a5060] hover:text-[#9aa0ae] transition-colors">Cancel</button>
-                            </div>
-                          )}
+                    {confirmDeleteId === entry.id ? (
+                      /* Confirmation prompt — replaces entry content */
+                      <div className="rounded-lg border-2 border-[#ff6b6b]/40 bg-[#0d0f14] px-6 py-5 flex items-center justify-between gap-4">
+                        <p className="text-sm text-[#f0eee8]">Delete this entry?</p>
+                        <div className="flex gap-3 shrink-0">
+                          <button
+                            onClick={e => doDelete(entry.id, e)}
+                            className="text-sm px-4 py-1.5 rounded-lg border-2 border-[#ff6b6b]/50 text-[#ff6b6b] hover:bg-[#ff6b6b]/10 transition-all font-bold"
+                          >
+                            Delete
+                          </button>
+                          <button
+                            onClick={cancelDelete}
+                            className="text-sm px-4 py-1.5 rounded-lg border-2 border-[#3a3f4d] text-[#9aa0ae] hover:text-[#f0eee8] transition-all"
+                          >
+                            Cancel
+                          </button>
                         </div>
-                        <span className="text-sm text-[#3a3f4d] shrink-0 transition-colors pt-0.5">
-                          {entry.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </span>
                       </div>
-                    </button>
-                    {/* Delete button — always visible */}
-                    <button
-                      onClick={e => deleteFromHistory(entry.id, e)}
-                      className="absolute top-4 right-4 w-7 h-7 flex items-center justify-center rounded text-[#555b6e] hover:text-[#ff6b6b] hover:bg-[#ff6b6b]/10 transition-all text-base"
-                      title="Delete"
-                    >
-                      ✕
-                    </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => loadFromHistory(entry)}
+                          className="w-full text-left rounded-lg border-2 border-[#2a2e3a] bg-[#0d0f14] px-6 py-5 hover:border-[#fe019a]/30 hover:bg-[#fe019a]/5 transition-all"
+                        >
+                          <div className="flex items-start justify-between gap-4 pr-10">
+                            <div className="space-y-2 min-w-0 w-full">
+                              <p className="text-2xl text-[#fe019a] font-bold truncate">{resultStr}</p>
+                              <p className="text-sm text-[#555b6e] truncate">{knownParts.join("  ·  ")}</p>
+                              {!isEditingNote && (
+                                <p
+                                  onClick={e => startEditNote(entry.id, entry.note, e)}
+                                  className={`text-sm mt-1 cursor-text transition-colors ${
+                                    entry.note
+                                      ? "text-[#8891a4] hover:text-[#f0eee8]"
+                                      : "text-[#3a3f4d] hover:text-[#555b6e]"
+                                  }`}
+                                >
+                                  {entry.note || "Click to add a note..."}
+                                </p>
+                              )}
+                              {isEditingNote && (
+                                <div className="mt-1 flex gap-2" onClick={e => e.stopPropagation()}>
+                                  <input
+                                    autoFocus
+                                    type="text"
+                                    value={editingNoteText}
+                                    onChange={e => setEditingNoteText(e.target.value)}
+                                    onKeyDown={e => { if (e.key === "Enter") saveNote(entry.id); if (e.key === "Escape") setEditingNoteId(null); }}
+                                    className="flex-1 bg-transparent border-b border-[#fe019a]/30 text-sm text-[#f0eee8] outline-none placeholder:text-[#3a3f4d] pb-0.5"
+                                    placeholder="Add a note..."
+                                  />
+                                  <button onClick={() => saveNote(entry.id)} className="text-sm text-[#fe019a] hover:text-[#f0eee8] transition-colors">Save</button>
+                                  <button onClick={() => setEditingNoteId(null)} className="text-sm text-[#4a5060] hover:text-[#9aa0ae] transition-colors">Cancel</button>
+                                </div>
+                              )}
+                            </div>
+                            <span className="text-sm text-[#3a3f4d] shrink-0 transition-colors pt-0.5">
+                              {entry.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                        </button>
+                        <button
+                          onClick={e => confirmDelete(entry.id, e)}
+                          className="absolute top-4 right-4 w-7 h-7 flex items-center justify-center rounded text-[#555b6e] hover:text-[#ff6b6b] hover:bg-[#ff6b6b]/10 transition-all text-base"
+                          title="Delete"
+                        >
+                          ✕
+                        </button>
+                      </>
+                    )}
                   </div>
                 );
               })}
