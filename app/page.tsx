@@ -99,7 +99,9 @@ export default function Home() {
   const [editingNoteText, setEditingNoteText] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [noteTransform, setNoteTransform] = useState<"super" | "sub" | null>(null);
+  const [transformContext, setTransformContext] = useState<"pending" | "editing" | null>(null);
   const editingNoteInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingNoteInputRef = useRef<HTMLInputElement | null>(null);
 
   const unknownIsConc = VAR_META[unknown].isConc;
 
@@ -160,6 +162,7 @@ export default function Home() {
     setHistory(p => [entry, ...p].slice(0, 20));
     setNextId(n => n + 1);
     setPendingNote("");
+    if (transformContext === "pending") { setNoteTransform(null); setTransformContext(null); }
   };
 
   const loadFromHistory = (entry: HistoryEntry) => {
@@ -191,27 +194,30 @@ export default function Home() {
     e.stopPropagation();
     setEditingNoteId(id);
     setEditingNoteText(note);
+    setNoteTransform(null);
+    setTransformContext(null);
   };
 
   const saveNote = (id: number) => {
     setHistory(p => p.map(e => e.id === id ? { ...e, note: editingNoteText.trim() } : e));
     setEditingNoteId(null);
     setNoteTransform(null);
+    setTransformContext(null);
   };
 
-  const insertAtCursor = (char: string) => {
-    const input = editingNoteInputRef.current;
-    const curPos = input ? (input.selectionStart ?? editingNoteText.length) : editingNoteText.length;
-    const endPos = input ? (input.selectionEnd ?? editingNoteText.length) : editingNoteText.length;
-    const newText = editingNoteText.slice(0, curPos) + char + editingNoteText.slice(endPos);
+  const insertAtCursor = (char: string, context: "pending" | "editing") => {
+    const input = context === "pending" ? pendingNoteInputRef.current : editingNoteInputRef.current;
+    const text = context === "pending" ? pendingNote : editingNoteText;
+    const setText = context === "pending" ? setPendingNote : setEditingNoteText;
+    const curPos = input ? (input.selectionStart ?? text.length) : text.length;
+    const endPos = input ? (input.selectionEnd ?? text.length) : text.length;
+    const newText = text.slice(0, curPos) + char + text.slice(endPos);
     const newCurPos = curPos + char.length;
-    setEditingNoteText(newText);
+    setText(newText);
     if (input) {
       requestAnimationFrame(() => {
-        if (editingNoteInputRef.current) {
-          editingNoteInputRef.current.focus();
-          editingNoteInputRef.current.setSelectionRange(newCurPos, newCurPos);
-        }
+        input.focus();
+        input.setSelectionRange(newCurPos, newCurPos);
       });
     }
   };
@@ -224,20 +230,32 @@ export default function Home() {
         setEditingNoteText((entry.note || "") + char);
       }
     } else {
-      insertAtCursor(char);
+      insertAtCursor(char, "editing");
     }
   };
 
   const handleNoteKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, entryId: number) => {
     if (e.key === "Enter") { saveNote(entryId); return; }
     if (e.key === "Escape") {
-      if (noteTransform) { setNoteTransform(null); return; }
+      if (noteTransform && transformContext === "editing") { setNoteTransform(null); setTransformContext(null); return; }
       setEditingNoteId(null);
       return;
     }
-    if (noteTransform && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (noteTransform && transformContext === "editing" && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
-      insertAtCursor(applyTransform(e.key, noteTransform));
+      insertAtCursor(applyTransform(e.key, noteTransform), "editing");
+    }
+  };
+
+  const handlePendingKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") { saveToHistory(); return; }
+    if (e.key === "Escape") {
+      if (noteTransform && transformContext === "pending") { setNoteTransform(null); setTransformContext(null); return; }
+      return;
+    }
+    if (noteTransform && transformContext === "pending" && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      insertAtCursor(applyTransform(e.key, noteTransform), "pending");
     }
   };
 
@@ -246,6 +264,7 @@ export default function Home() {
       const target = e.target as HTMLElement | null;
       if (target?.closest("[data-note-ui]")) return;
       setNoteTransform(null);
+      setTransformContext(null);
     };
     document.addEventListener("click", close);
     return () => document.removeEventListener("click", close);
@@ -395,14 +414,77 @@ export default function Home() {
           )}
           {result !== null && !error && (
             <div className="px-6 pb-5 space-y-3">
-              <input
-                type="text"
-                value={pendingNote}
-                onChange={e => setPendingNote(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") saveToHistory(); }}
-                placeholder="Add a note (optional)..."
-                className="w-full bg-transparent border-2 border-[#2a2e3a] rounded-lg px-4 py-2 text-sm text-[#f0eee8] placeholder:text-[#3a3f4d] outline-none focus:border-[#fe019a]/30 transition-colors"
-              />
+              <div className="space-y-1.5">
+                <input
+                  ref={el => { pendingNoteInputRef.current = el; }}
+                  data-note-ui
+                  type="text"
+                  value={pendingNote}
+                  onChange={e => setPendingNote(e.target.value)}
+                  onKeyDown={handlePendingKeyDown}
+                  placeholder={
+                    noteTransform && transformContext === "pending"
+                      ? (noteTransform === "super" ? "Typing as superscript..." : "Typing as subscript...")
+                      : "Add a note (optional)..."
+                  }
+                  className={`w-full bg-transparent border-2 rounded-lg px-4 py-2 text-sm text-[#f0eee8] placeholder:text-[#3a3f4d] outline-none transition-colors ${
+                    noteTransform && transformContext === "pending"
+                      ? "border-[#fe019a]"
+                      : "border-[#2a2e3a] focus:border-[#fe019a]/30"
+                  }`}
+                />
+                <div
+                  data-note-ui
+                  className="flex gap-1 items-center"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <button
+                    onClick={() => { insertAtCursor("µ", "pending"); }}
+                    className="px-2 py-0.5 rounded text-xs text-[#8891a4] hover:text-[#f0eee8] hover:bg-[#2a2e3a] transition-all border border-[#2a2e3a]"
+                    title="Insert µ"
+                  >
+                    µ
+                  </button>
+                  <button
+                    onClick={() => {
+                      setNoteTransform(prev => (prev === "super" && transformContext === "pending") ? null : "super");
+                      setTransformContext("pending");
+                      pendingNoteInputRef.current?.focus();
+                    }}
+                    className={`px-2 py-0.5 rounded text-xs transition-all border ${
+                      noteTransform === "super" && transformContext === "pending"
+                        ? "text-[#fe019a] bg-[#fe019a]/10 border-[#fe019a]/50"
+                        : "text-[#8891a4] hover:text-[#f0eee8] hover:bg-[#2a2e3a] border-[#2a2e3a]"
+                    }`}
+                    title="Type next characters as superscript"
+                  >
+                    x²
+                  </button>
+                  <button
+                    onClick={() => {
+                      setNoteTransform(prev => (prev === "sub" && transformContext === "pending") ? null : "sub");
+                      setTransformContext("pending");
+                      pendingNoteInputRef.current?.focus();
+                    }}
+                    className={`px-2 py-0.5 rounded text-xs transition-all border ${
+                      noteTransform === "sub" && transformContext === "pending"
+                        ? "text-[#fe019a] bg-[#fe019a]/10 border-[#fe019a]/50"
+                        : "text-[#8891a4] hover:text-[#f0eee8] hover:bg-[#2a2e3a] border-[#2a2e3a]"
+                    }`}
+                    title="Type next characters as subscript"
+                  >
+                    x₂
+                  </button>
+                  {noteTransform && transformContext === "pending" && (
+                    <button
+                      onClick={() => { setNoteTransform(null); setTransformContext(null); pendingNoteInputRef.current?.focus(); }}
+                      className="text-[10px] text-[#fe019a] hover:text-[#f0eee8] ml-1 underline-offset-2 hover:underline transition-colors"
+                    >
+                      ESC to stop
+                    </button>
+                  )}
+                </div>
+              </div>
               <div className="flex items-center gap-3">
                 <button
                   onClick={saveToHistory}
@@ -508,7 +590,7 @@ export default function Home() {
                                           }
                                         />
                                         <button onClick={() => saveNote(entry.id)} className="text-sm text-[#fe019a] hover:text-[#f0eee8] transition-colors">Save</button>
-                                        <button onClick={() => { setEditingNoteId(null); setNoteTransform(null); }} className="text-sm text-[#4a5060] hover:text-[#9aa0ae] transition-colors">Cancel</button>
+                                        <button onClick={() => { setEditingNoteId(null); setNoteTransform(null); setTransformContext(null); }} className="text-sm text-[#4a5060] hover:text-[#9aa0ae] transition-colors">Cancel</button>
                                       </div>
                                       <div
                                         data-note-ui
@@ -524,11 +606,12 @@ export default function Home() {
                                         </button>
                                         <button
                                           onClick={() => {
-                                            setNoteTransform(prev => prev === "super" ? null : "super");
+                                            setNoteTransform(prev => (prev === "super" && transformContext === "editing") ? null : "super");
+                                            setTransformContext("editing");
                                             editingNoteInputRef.current?.focus();
                                           }}
                                           className={`px-2 py-0.5 rounded text-xs transition-all border ${
-                                            noteTransform === "super"
+                                            noteTransform === "super" && transformContext === "editing"
                                               ? "text-[#fe019a] bg-[#fe019a]/10 border-[#fe019a]/50"
                                               : "text-[#8891a4] hover:text-[#f0eee8] hover:bg-[#2a2e3a] border-[#2a2e3a]"
                                           }`}
@@ -538,11 +621,12 @@ export default function Home() {
                                         </button>
                                         <button
                                           onClick={() => {
-                                            setNoteTransform(prev => prev === "sub" ? null : "sub");
+                                            setNoteTransform(prev => (prev === "sub" && transformContext === "editing") ? null : "sub");
+                                            setTransformContext("editing");
                                             editingNoteInputRef.current?.focus();
                                           }}
                                           className={`px-2 py-0.5 rounded text-xs transition-all border ${
-                                            noteTransform === "sub"
+                                            noteTransform === "sub" && transformContext === "editing"
                                               ? "text-[#fe019a] bg-[#fe019a]/10 border-[#fe019a]/50"
                                               : "text-[#8891a4] hover:text-[#f0eee8] hover:bg-[#2a2e3a] border-[#2a2e3a]"
                                           }`}
@@ -550,9 +634,9 @@ export default function Home() {
                                         >
                                           x₂
                                         </button>
-                                        {noteTransform && (
+                                        {noteTransform && transformContext === "editing" && (
                                           <button
-                                            onClick={() => { setNoteTransform(null); editingNoteInputRef.current?.focus(); }}
+                                            onClick={() => { setNoteTransform(null); setTransformContext(null); editingNoteInputRef.current?.focus(); }}
                                             className="text-[10px] text-[#fe019a] hover:text-[#f0eee8] ml-1 underline-offset-2 hover:underline transition-colors"
                                           >
                                             ESC to stop
